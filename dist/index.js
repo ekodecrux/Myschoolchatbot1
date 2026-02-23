@@ -470,343 +470,6 @@ var adminProcedure = t.procedure.use(
   })
 );
 
-// server/enhancedSemanticSearch.ts
-function soundex(str) {
-  const s = str.toUpperCase().replace(/[^A-Z]/g, "");
-  if (s.length === 0) return "0000";
-  const firstLetter = s[0];
-  const codes = {
-    "B": "1",
-    "F": "1",
-    "P": "1",
-    "V": "1",
-    "C": "2",
-    "G": "2",
-    "J": "2",
-    "K": "2",
-    "Q": "2",
-    "S": "2",
-    "X": "2",
-    "Z": "2",
-    "D": "3",
-    "T": "3",
-    "L": "4",
-    "M": "5",
-    "N": "5",
-    "R": "6"
-  };
-  let code = firstLetter, prevCode = codes[firstLetter] || "0";
-  for (let i = 1; i < s.length && code.length < 4; i++) {
-    const currentCode = codes[s[i]] || "0";
-    if (currentCode !== "0" && currentCode !== prevCode) code += currentCode;
-    if (currentCode !== "0") prevCode = currentCode;
-  }
-  return (code + "0000").substring(0, 4);
-}
-function levenshtein(a, b) {
-  a = a.toLowerCase();
-  b = b.toLowerCase();
-  if (a === b) return 0;
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const matrix = [];
-  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      const cost = a[j - 1] === b[i - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + cost
-      );
-    }
-  }
-  return matrix[b.length][a.length];
-}
-var COMMON_WORDS = {
-  // Puzzle variations
-  "puzle": "puzzle",
-  "puzel": "puzzle",
-  "puzzles": "puzzle",
-  "puzles": "puzzle",
-  "puzzl": "puzzle",
-  "puzzel": "puzzle",
-  // Image variations
-  "imges": "images",
-  "imags": "images",
-  "imagse": "images",
-  "iamges": "images",
-  "pictres": "pictures",
-  "picutres": "pictures",
-  "picturs": "pictures",
-  // Chart variations
-  "chrat": "chart",
-  "chrts": "charts",
-  "chrats": "charts",
-  "cahrt": "chart",
-  // Animal variations
-  "animls": "animals",
-  "anmals": "animals",
-  "animales": "animals",
-  "animlas": "animals",
-  // Common animals (prevent false corrections)
-  "monkey": "monkey",
-  "monkeys": "monkey",
-  "monky": "monkey",
-  "munkey": "monkey",
-  "lion": "lion",
-  "lions": "lion",
-  "tiger": "tiger",
-  "tigers": "tiger",
-  "elephant": "elephant",
-  "elephants": "elephant",
-  "elefant": "elephant",
-  "dog": "dog",
-  "dogs": "dog",
-  "cat": "cat",
-  "cats": "cat",
-  "bird": "bird",
-  "birds": "bird",
-  "fish": "fish",
-  "fishes": "fish",
-  "rabbit": "rabbit",
-  "rabbits": "rabbit",
-  "cow": "cow",
-  "horse": "horse",
-  "bear": "bear",
-  "snake": "snake",
-  "frog": "frog",
-  "deer": "deer",
-  "flower": "flower",
-  "flowers": "flowers",
-  "tree": "tree",
-  "trees": "trees",
-  // Math variations
-  "maths": "maths",
-  "mathss": "maths",
-  "mats": "maths",
-  "mahs": "maths",
-  // Science variations
-  "scince": "science",
-  "sceince": "science",
-  "sciense": "science",
-  "sicence": "science",
-  // English variations
-  "englsh": "english",
-  "engish": "english",
-  "enlgish": "english",
-  // Exam variations
-  "exm": "exam",
-  "exams": "exam",
-  "exma": "exam",
-  "examm": "exam",
-  // Tips variations
-  "tps": "tips",
-  "tipss": "tips",
-  "tisp": "tips",
-  // Worksheet variations
-  "workshet": "worksheet",
-  "workseet": "worksheet",
-  "worksheets": "worksheets",
-  "worksehet": "worksheet",
-  "worsheet": "worksheet",
-  // Syllabus variations
-  "sylabus": "syllabus",
-  "sillabus": "syllabus",
-  "syllbus": "syllabus",
-  "syllabu": "syllabus",
-  // Fruit variations
-  "fruts": "fruits",
-  "fruist": "fruits",
-  "frutis": "fruits",
-  "fruite": "fruits",
-  "fruit": "fruit",
-  "fruits": "fruits",
-  "fruites": "fruits",
-  // Smart variations
-  "smrat": "smart",
-  "samrt": "smart",
-  "smrt": "smart",
-  // Wall variations
-  "wll": "wall",
-  "wal": "wall",
-  "walll": "wall",
-  // Telugu variations
-  "telgu": "telugu",
-  "telegu": "telugu",
-  "telugue": "telugu",
-  // Poem variations
-  "poam": "poem",
-  "pome": "poem",
-  "poams": "poems",
-  "pomes": "poems",
-  // Class variations
-  "clas": "class",
-  "clss": "class",
-  "classs": "class",
-  // Bank variations
-  "bnk": "bank",
-  "bnak": "bank",
-  "bakn": "bank",
-  // MCQ variations
-  "mcqs": "mcq",
-  "mcq's": "mcq",
-  "mcss": "mcq",
-  // Resource variations
-  "resourse": "resource",
-  "resorce": "resource",
-  "resourc": "resource",
-  // Video variations
-  "vido": "video",
-  "vidoe": "video",
-  "vidoes": "videos",
-  "vidos": "videos"
-};
-var SKIP_WORDS = /* @__PURE__ */ new Set([
-  "how",
-  "are",
-  "you",
-  "what",
-  "is",
-  "the",
-  "a",
-  "an",
-  "to",
-  "for",
-  "in",
-  "on",
-  "at",
-  "it",
-  "this",
-  "that",
-  "can",
-  "do",
-  "does",
-  "did",
-  "will",
-  "would",
-  "could",
-  "should",
-  "be",
-  "been",
-  "being",
-  "have",
-  "has",
-  "had",
-  "was",
-  "were",
-  "am",
-  "is",
-  "are",
-  "i",
-  "me",
-  "my",
-  "we",
-  "us",
-  "our",
-  "your",
-  "they",
-  "them",
-  "their",
-  "he",
-  "she",
-  "hi",
-  "hello",
-  "hey",
-  "good",
-  "morning",
-  "evening",
-  "night",
-  "help",
-  "please",
-  "find",
-  "search",
-  "show",
-  "give",
-  "get",
-  "want",
-  "need",
-  "like",
-  "about",
-  "class",
-  "grade",
-  "level",
-  "subject",
-  "topic",
-  "chapter",
-  "lesson",
-  "and",
-  "or",
-  "but",
-  "if",
-  "then",
-  "so",
-  "because",
-  "with",
-  "from",
-  "of",
-  // Animal names that should never be corrected
-  "monkey",
-  "lion",
-  "tiger",
-  "elephant",
-  "dog",
-  "cat",
-  "bird",
-  "fish",
-  "cow",
-  "horse",
-  "bear",
-  "snake",
-  "frog",
-  "deer",
-  "rabbit",
-  "parrot",
-  "peacock",
-  "eagle",
-  "owl",
-  "giraffe",
-  "zebra",
-  "panda",
-  "koala",
-  "kangaroo",
-  "crocodile",
-  "turtle",
-  "dolphin"
-]);
-function correctSpelling(query) {
-  const words = query.toLowerCase().split(/\s+/);
-  const corrected = words.map((word) => {
-    if (SKIP_WORDS.has(word) || word.length <= 2) return word;
-    if (COMMON_WORDS[word]) return COMMON_WORDS[word];
-    let bestMatch = word;
-    let bestDistance = 2;
-    for (const [misspelled, correct] of Object.entries(COMMON_WORDS)) {
-      const dist = levenshtein(word, misspelled);
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        bestMatch = correct;
-      }
-      const distToCorrect = levenshtein(word, correct);
-      if (distToCorrect < bestDistance) {
-        bestDistance = distToCorrect;
-        bestMatch = correct;
-      }
-    }
-    if (bestMatch === word && word.length > 3) {
-      const wordSoundex = soundex(word);
-      for (const [_, correct] of Object.entries(COMMON_WORDS)) {
-        if (soundex(correct) === wordSoundex) {
-          return correct;
-        }
-      }
-    }
-    return bestMatch;
-  });
-  return corrected.join(" ");
-}
-
 // server/groqAI.ts
 import Groq from "groq-sdk";
 var groq = new Groq({
@@ -959,223 +622,6 @@ IMPORTANT: Translate single words directly. "\u0C2A\u0C02\u0C21\u0C41" means "fr
   }
 }
 
-// server/advancedSearch.ts
-function levenshteinDistance(a, b) {
-  const matrix = [];
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-  return matrix[b.length][a.length];
-}
-function fuzzyMatch(query, target, threshold = 0.7) {
-  const distance = levenshteinDistance(query.toLowerCase(), target.toLowerCase());
-  const maxLength = Math.max(query.length, target.length);
-  const similarity = 1 - distance / maxLength;
-  return similarity >= threshold;
-}
-function soundex2(s) {
-  const a = s.toLowerCase().split("");
-  const firstLetter = a[0];
-  const codes = {
-    a: "",
-    e: "",
-    i: "",
-    o: "",
-    u: "",
-    h: "",
-    w: "",
-    y: "",
-    b: "1",
-    f: "1",
-    p: "1",
-    v: "1",
-    c: "2",
-    g: "2",
-    j: "2",
-    k: "2",
-    q: "2",
-    s: "2",
-    x: "2",
-    z: "2",
-    d: "3",
-    t: "3",
-    l: "4",
-    m: "5",
-    n: "5",
-    r: "6"
-  };
-  const coded = a.map((letter) => codes[letter] || "").filter((code, index) => index === 0 || code !== a[index - 1]).join("").replace(/0/g, "").substring(0, 4);
-  return (firstLetter + coded + "000").substring(0, 4).toUpperCase();
-}
-var SYNONYMS = {
-  // Animals
-  "animal": ["animals", "creature", "creatures", "beast", "wildlife"],
-  "monkey": ["monkeys", "ape", "primate", "chimp"],
-  "dog": ["dogs", "puppy", "puppies", "canine"],
-  "cat": ["cats", "kitten", "kittens", "feline"],
-  "bird": ["birds", "avian", "fowl"],
-  "fish": ["fishes", "aquatic"],
-  "elephant": ["elephants", "pachyderm"],
-  "lion": ["lions", "leo"],
-  "tiger": ["tigers"],
-  // Plants & Nature
-  "fruit": ["fruits", "fruut", "froot"],
-  "flower": ["flowers", "blossom", "bloom"],
-  "plant": ["plants", "vegetation", "flora"],
-  "tree": ["trees", "woods", "forest"],
-  "vegetable": ["vegetables", "veggies"],
-  // Education
-  "exam": ["exams", "test", "tests", "examination", "quiz", "assessment"],
-  "study": ["studies", "learn", "learning", "education"],
-  "book": ["books", "textbook", "reading"],
-  "lesson": ["lessons", "class", "lecture"],
-  "homework": ["assignment", "work", "task"],
-  "question": ["questions", "query", "queries"],
-  "answer": ["answers", "solution", "solutions"],
-  // Subjects
-  "maths": ["math", "mathematics", "arithmetic", "calculation"],
-  "science": ["sciences", "scientific", "biology", "physics", "chemistry"],
-  "english": ["language", "grammar", "vocabulary"],
-  "hindi": ["\u0939\u093F\u0902\u0926\u0940"],
-  "telugu": ["\u0C24\u0C46\u0C32\u0C41\u0C17\u0C41"],
-  // Art & Creativity
-  "color": ["colors", "colour", "colours", "shade", "hue"],
-  "draw": ["drawing", "sketch", "art"],
-  "paint": ["painting", "artwork"],
-  "picture": ["pictures", "image", "images", "photo", "photos"],
-  // Shapes & Numbers
-  "shape": ["shapes", "geometry", "geometric"],
-  "number": ["numbers", "numeral", "digit", "digits"],
-  "circle": ["circles", "round"],
-  "square": ["squares"],
-  "triangle": ["triangles"],
-  // Actions
-  "write": ["writing", "written", "compose"],
-  "read": ["reading", "comprehension"],
-  "count": ["counting", "enumerate"],
-  "add": ["addition", "plus", "sum"],
-  "subtract": ["subtraction", "minus", "difference"],
-  // Interview/Career
-  "interview": ["interviews", "exam tips", "preparation", "tips"]
-};
-function expandWithSynonyms(query) {
-  const words = query.toLowerCase().split(/\s+/);
-  const expanded = /* @__PURE__ */ new Set([query.toLowerCase()]);
-  words.forEach((word) => {
-    expanded.add(word);
-    if (SYNONYMS[word]) {
-      SYNONYMS[word].forEach((syn) => expanded.add(syn));
-    }
-    Object.entries(SYNONYMS).forEach(([key, syns]) => {
-      if (syns.includes(word)) {
-        expanded.add(key);
-        syns.forEach((s) => expanded.add(s));
-      }
-    });
-    Object.entries(SYNONYMS).forEach(([key, syns]) => {
-      if (fuzzyMatch(word, key, 0.8)) {
-        expanded.add(key);
-        syns.forEach((s) => expanded.add(s));
-      }
-    });
-  });
-  return Array.from(expanded);
-}
-var COMMON_TYPOS = {
-  "monky": "monkey",
-  "monkee": "monkey",
-  "munkee": "monkey",
-  "fruut": "fruit",
-  "froot": "fruit",
-  "anamil": "animal",
-  "animl": "animal",
-  "collor": "color",
-  "colur": "color",
-  "shap": "shape",
-  "numbr": "number",
-  "numbere": "number",
-  "exm": "exam",
-  "tets": "test",
-  "studie": "study",
-  "scince": "science",
-  "sceince": "science",
-  "mtah": "maths",
-  "maht": "maths",
-  "englsh": "english",
-  "engilsh": "english"
-};
-function autoCorrect(query) {
-  const words = query.toLowerCase().split(/\s+/);
-  const corrected = words.map((word) => {
-    if (COMMON_TYPOS[word]) {
-      return COMMON_TYPOS[word];
-    }
-    for (const [typo, correct] of Object.entries(COMMON_TYPOS)) {
-      if (fuzzyMatch(word, typo, 0.9)) {
-        return correct;
-      }
-    }
-    for (const key of Object.keys(SYNONYMS)) {
-      if (fuzzyMatch(word, key, 0.85)) {
-        return key;
-      }
-    }
-    return word;
-  });
-  return corrected.join(" ");
-}
-function enhanceSearchQuery(query) {
-  const corrected = autoCorrect(query);
-  const expanded = expandWithSynonyms(corrected);
-  const soundexCodes = expanded.map((term) => soundex2(term));
-  return {
-    original: query,
-    corrected,
-    expanded,
-    soundexCodes: Array.from(new Set(soundexCodes))
-  };
-}
-async function advancedSearch(query, portalAPI = "https://portal.myschoolct.com/api/rest/search/global") {
-  const enhanced = enhanceSearchQuery(query);
-  console.log(`\u{1F50D} Advanced Search:`, {
-    original: enhanced.original,
-    corrected: enhanced.corrected,
-    expanded: enhanced.expanded.slice(0, 5)
-  });
-  for (const term of enhanced.expanded) {
-    try {
-      const url = `${portalAPI}?query=${encodeURIComponent(term)}&size=6`;
-      const response = await fetch(url);
-      if (!response.ok) continue;
-      const data = await response.json();
-      if (data.results && data.results.length > 0) {
-        console.log(`\u2705 Found ${data.results.length} results for "${term}"`);
-        return data.results;
-      }
-    } catch (error) {
-      console.error(`\u274C Error searching for "${term}":`, error);
-    }
-  }
-  console.log(`\u26A0\uFE0F No results found for any expanded terms`);
-  return [];
-}
-
 // server/routers.ts
 var BASE_URL = "https://portal.myschoolct.com";
 var PORTAL_API = "https://portal.myschoolct.com/api/rest/search/global";
@@ -1242,26 +688,26 @@ var AGE_TO_CLASS = {
   14: "class-9",
   15: "class-10"
 };
-async function fetchPortalResults(query, size = 6) {
+async function fetchPortalResultsDirect(query, size = 6) {
   try {
-    console.log(`\u{1F50D} [PORTAL] Fetching: "${query}"`);
-    const results = await advancedSearch(query, PORTAL_API);
-    console.log(`\u2705 [PORTAL] Found ${results.length} results`);
-    return results || [];
+    console.log(`\u{1F50D} [PORTAL DIRECT] Fetching: "${query}"`);
+    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.log(`\u26A0\uFE0F [PORTAL] API error: ${response.status}`);
+      return [];
+    }
+    const data = await response.json();
+    if (data.results && data.results.length > 0) {
+      console.log(`\u2705 [PORTAL DIRECT] Found ${data.results.length} results`);
+      return data.results;
+    }
+    console.log(`\u26A0\uFE0F [PORTAL DIRECT] No results for "${query}"`);
+    return [];
   } catch (error) {
     console.error("\u274C [PORTAL] Error:", error);
     return [];
   }
-}
-var FALLBACK_SEARCHES = {
-  default: ["animals", "flowers", "shapes", "numbers"]
-};
-async function findNearestResults(originalQuery) {
-  for (const fallback of FALLBACK_SEARCHES.default) {
-    const results = await fetchPortalResults(fallback, 6);
-    if (results.length > 0) return { query: fallback, results };
-  }
-  return { query: "educational resources", results: [] };
 }
 var GREETING_PATTERNS = [/^(hi|hello|hey|hii+|helo|hai|hola)\b/i, /^good\s*(morning|afternoon|evening)/i, /^(what'?s?\s*up|howdy|greetings|namaste)/i];
 function isGreeting(message) {
@@ -1321,7 +767,7 @@ var appRouter = router({
     autocomplete: publicProcedure.input(z.object({ query: z.string(), language: z.string().optional() })).query(async ({ input }) => {
       if (input.query.length < 2) return { resources: [], images: [] };
       try {
-        const portalResults = await fetchPortalResults(input.query, 6);
+        const portalResults = await fetchPortalResultsDirect(input.query, 6);
         const images = portalResults.map((r) => ({
           id: r.code || r.title,
           url: r.thumbnail || r.path,
@@ -1378,33 +824,44 @@ var appRouter = router({
         } catch (e) {
         }
       }
-      try {
-        const c = await correctSpelling(searchQuery);
-        if (c) searchQuery = c;
-      } catch (e) {
-      }
       const { classNum, subjectMu } = parseClassSubject(searchQuery);
       const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
       console.log(`\u{1F517} Smart URL: ${resourceUrl}`);
-      let portalResults = await fetchPortalResults(searchQuery, 6);
-      if (portalResults.length === 0) {
-        const fallback = await findNearestResults(searchQuery);
-        portalResults = fallback.results;
+      let portalResults = await fetchPortalResultsDirect(searchQuery, 6);
+      const hasRealResults = portalResults.length > 0;
+      let responseMessage;
+      let thumbnails = [];
+      let resourceName = "";
+      let resourceDescription = "";
+      let searchType;
+      if (hasRealResults) {
+        thumbnails = portalResults.map((r) => ({ url: r.path, thumbnail: r.thumbnail, title: r.title, category: r.category }));
+        responseMessage = `Found ${portalResults.length} results for "${searchQuery}". Click below to explore!`;
+        resourceName = `${portalResults.length} resources found`;
+        resourceDescription = portalResults.slice(0, 3).map((r) => r.title).join(", ");
+        searchType = "direct_search";
+      } else {
+        responseMessage = `No images found for "${searchQuery}". Try searching for:
+\u2022 Common topics like "animals", "fruits", "flowers"
+\u2022 Class-based content like "Class 5 Maths"
+\u2022 Or browse our resource categories above!`;
+        resourceName = "";
+        resourceDescription = "";
+        searchType = "no_results";
+        thumbnails = [];
       }
-      const thumbnails = portalResults.map((r) => ({ url: r.path, thumbnail: r.thumbnail, title: r.title, category: r.category }));
-      let responseMessage = portalResults.length > 0 ? `Found ${portalResults.length} results for "${searchQuery}"` : `No results for "${searchQuery}". Try browsing our resources!`;
       await saveChatMessage({ sessionId, role: "user", message, language });
       await saveChatMessage({ sessionId, role: "assistant", message: responseMessage, language: "en" });
       await logSearchQuery({ sessionId, query: searchQuery, translatedQuery: searchQuery !== message ? searchQuery : null, language, resultsCount: thumbnails.length, topResultUrl: resourceUrl, topResultName: portalResults[0]?.title || "" });
-      console.log(`\u2705 === SEARCH COMPLETE ===
+      console.log(`\u2705 === SEARCH COMPLETE (${hasRealResults ? "found" : "no results"}) ===
 `);
       return {
         response: responseMessage,
-        resourceUrl,
-        resourceName: portalResults.length > 0 ? `${portalResults.length} resources found` : "",
-        resourceDescription: portalResults.slice(0, 3).map((r) => r.title).join("\n"),
-        suggestions: [],
-        searchType: portalResults.length > 0 ? "direct_search" : "no_results",
+        resourceUrl: hasRealResults ? resourceUrl : "",
+        resourceName,
+        resourceDescription,
+        suggestions: hasRealResults ? [] : ["Animals", "Class 5 English", "Flowers", "Fruits"],
+        searchType,
         thumbnails
       };
     })

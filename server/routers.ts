@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./_core/trpc";
-import { performPrioritySearch, correctSpelling } from "./enhancedSemanticSearch";
+import { performPrioritySearch } from "./enhancedSemanticSearch";
 import { getAIResponse } from "./groqAI";
 import { saveChatMessage } from "./chatbotDb";
 import { logSearchQuery } from "./analyticsDb";
 import { translateAndExtractKeyword } from "./translation_util";
-import { advancedSearch, enhanceSearchQuery } from "./advancedSearch";
 
 const BASE_URL = "https://portal.myschoolct.com";
 const PORTAL_API = "https://portal.myschoolct.com/api/rest/search/global";
@@ -58,28 +57,31 @@ interface PortalResult {
   path: string; title: string; category: string; thumbnail: string; type: string; tags: string[];
 }
 
-async function fetchPortalResults(query: string, size: number = 6): Promise<PortalResult[]> {
+// Direct portal API call - NO fuzzy matching, NO spell correction, NO fallbacks
+async function fetchPortalResultsDirect(query: string, size: number = 6): Promise<PortalResult[]> {
   try {
-    console.log(`🔍 [PORTAL] Fetching: "${query}"`);
-    const results = await advancedSearch(query, PORTAL_API);
-    console.log(`✅ [PORTAL] Found ${results.length} results`);
-    return results || [];
+    console.log(`🔍 [PORTAL DIRECT] Fetching: "${query}"`);
+    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.log(`⚠️ [PORTAL] API error: ${response.status}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (data.results && data.results.length > 0) {
+      console.log(`✅ [PORTAL DIRECT] Found ${data.results.length} results`);
+      return data.results;
+    }
+    
+    console.log(`⚠️ [PORTAL DIRECT] No results for "${query}"`);
+    return [];
   } catch (error) {
     console.error('❌ [PORTAL] Error:', error);
     return [];
   }
-}
-
-const FALLBACK_SEARCHES: Record<string, string[]> = {
-  default: ["animals", "flowers", "shapes", "numbers"],
-};
-
-async function findNearestResults(originalQuery: string): Promise<{ query: string; results: PortalResult[] }> {
-  for (const fallback of FALLBACK_SEARCHES.default) {
-    const results = await fetchPortalResults(fallback, 6);
-    if (results.length > 0) return { query: fallback, results };
-  }
-  return { query: "educational resources", results: [] };
 }
 
 // Greeting patterns
@@ -117,13 +119,10 @@ function parseAge(query: string): number | null {
 function buildSmartUrl(query: string, classNum: number | null, subjectMu: number | null): string {
   const lowerQuery = query.toLowerCase().trim();
 
-  // Only redirect to OCRC for exact category matches (e.g., "animals", "birds")
-  // Specific items like "monkey", "lion" should go to search results
   if (OCRC_CATEGORIES[lowerQuery]) {
     return `${BASE_URL}${OCRC_CATEGORIES[lowerQuery].path}?main=2&mu=${OCRC_CATEGORIES[lowerQuery].mu}`;
   }
 
-  // Age-based navigation (Age 6 = Class 1, Age 8 = Class 3)
   const age = parseAge(lowerQuery);
   if (age && AGE_TO_CLASS[age]) {
     const className = AGE_TO_CLASS[age];
@@ -133,7 +132,6 @@ function buildSmartUrl(query: string, classNum: number | null, subjectMu: number
     return `${BASE_URL}/views/academic/class/${className}`;
   }
 
-  // Class + Subject navigation
   if (classNum && classNum >= 1 && classNum <= 10) {
     const className = `class-${classNum}`;
     if (subjectMu !== null) {
@@ -142,7 +140,6 @@ function buildSmartUrl(query: string, classNum: number | null, subjectMu: number
     return `${BASE_URL}/views/academic/class/${className}`;
   }
 
-  // Kindergarten
   const kinderMatch = lowerQuery.match(/\b(nursery|lkg|ukg)\b/i);
   if (kinderMatch) {
     const kinderClass = kinderMatch[1].toLowerCase();
@@ -152,7 +149,6 @@ function buildSmartUrl(query: string, classNum: number | null, subjectMu: number
     return `${BASE_URL}/views/academic/class/${kinderClass}`;
   }
 
-  // Default to text search for specific items (monkey, lion, etc.)
   return `${BASE_URL}/views/result?text=${encodeURIComponent(query)}`;
 }
 
@@ -163,12 +159,15 @@ export const appRouter = router({
       .query(async ({ input }) => {
         if (input.query.length < 2) return { resources: [], images: [] };
         try {
-          const portalResults = await fetchPortalResults(input.query, 6);
+          // Use direct API call - no fuzzy matching
+          const portalResults = await fetchPortalResultsDirect(input.query, 6);
           const images = portalResults.map((r: any) => ({
             id: r.code || r.title, url: r.thumbnail || r.path, title: r.title, category: r.category,
           }));
           const { classNum, subjectMu } = parseClassSubject(input.query);
           const url = buildSmartUrl(input.query, classNum, subjectMu);
+          
+          // Only show "Found X results" if we actually have results
           const resources = portalResults.length > 0 ? [{
             name: `Browse: "${input.query}"`, description: `Found ${portalResults.length} results`, url: url,
           }] : [];
@@ -205,8 +204,8 @@ export const appRouter = router({
           try { const r = await translateAndExtractKeyword(message, language); searchQuery = r.translated || message; } catch (e) {}
         }
 
-        // Spell correction
-        try { const c = await correctSpelling(searchQuery); if (c) searchQuery = c; } catch (e) {}
+        // NO SPELL CORRECTION - Use the exact query from user
+        // This prevents gibberish from being converted to random words
 
         // Parse class/subject
         const { classNum, subjectMu } = parseClassSubject(searchQuery);
@@ -215,23 +214,50 @@ export const appRouter = router({
         const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
         console.log(`🔗 Smart URL: ${resourceUrl}`);
 
-        // Fetch portal results
-        let portalResults = await fetchPortalResults(searchQuery, 6);
-        if (portalResults.length === 0) {
-          const fallback = await findNearestResults(searchQuery);
-          portalResults = fallback.results;
+        // Fetch portal results - DIRECT API call without any fuzzy matching
+        let portalResults = await fetchPortalResultsDirect(searchQuery, 6);
+        
+        // Check if we actually found results for the original query
+        const hasRealResults = portalResults.length > 0;
+        
+        // Build response based on actual results (NOT fallback)
+        let responseMessage: string;
+        let thumbnails: Array<{url: string; thumbnail: string; title: string; category: string}> = [];
+        let resourceName: string = "";
+        let resourceDescription: string = "";
+        let searchType: string;
+        
+        if (hasRealResults) {
+          // We found actual matching results
+          thumbnails = portalResults.map(r => ({ url: r.path, thumbnail: r.thumbnail, title: r.title, category: r.category }));
+          responseMessage = `Found ${portalResults.length} results for "${searchQuery}". Click below to explore!`;
+          resourceName = `${portalResults.length} resources found`;
+          resourceDescription = portalResults.slice(0, 3).map(r => r.title).join(", ");
+          searchType = "direct_search";
+        } else {
+          // No results found - show helpful message WITHOUT fake results
+          responseMessage = `No images found for "${searchQuery}". Try searching for:\n• Common topics like "animals", "fruits", "flowers"\n• Class-based content like "Class 5 Maths"\n• Or browse our resource categories above!`;
+          resourceName = "";
+          resourceDescription = "";
+          searchType = "no_results";
+          // Don't show any thumbnails for no-results case
+          thumbnails = [];
         }
-
-        const thumbnails = portalResults.map(r => ({ url: r.path, thumbnail: r.thumbnail, title: r.title, category: r.category }));
-        let responseMessage = portalResults.length > 0 ? `Found ${portalResults.length} results for "${searchQuery}"` : `No results for "${searchQuery}". Try browsing our resources!`;
 
         await saveChatMessage({ sessionId, role: "user", message, language });
         await saveChatMessage({ sessionId, role: "assistant", message: responseMessage, language: "en" });
         await logSearchQuery({ sessionId, query: searchQuery, translatedQuery: searchQuery !== message ? searchQuery : null, language, resultsCount: thumbnails.length, topResultUrl: resourceUrl, topResultName: portalResults[0]?.title || "" });
 
-        console.log(`✅ === SEARCH COMPLETE ===\n`);
-        return { response: responseMessage, resourceUrl, resourceName: portalResults.length > 0 ? `${portalResults.length} resources found` : "",
-          resourceDescription: portalResults.slice(0, 3).map(r => r.title).join("\n"), suggestions: [], searchType: portalResults.length > 0 ? "direct_search" : "no_results", thumbnails };
+        console.log(`✅ === SEARCH COMPLETE (${hasRealResults ? 'found' : 'no results'}) ===\n`);
+        return { 
+          response: responseMessage, 
+          resourceUrl: hasRealResults ? resourceUrl : "", 
+          resourceName,
+          resourceDescription, 
+          suggestions: hasRealResults ? [] : ["Animals", "Class 5 English", "Flowers", "Fruits"], 
+          searchType, 
+          thumbnails 
+        };
       }),
   }),
 });
