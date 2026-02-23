@@ -67,10 +67,8 @@ interface PortalResult {
 
 // Check if a result is an actual image (has valid thumbnail URL)
 function isValidImageResult(result: PortalResult): boolean {
-  // Must have a thumbnail that looks like an image URL
   if (!result.thumbnail) return false;
   
-  // Check if thumbnail is an actual image URL (not just a category/folder)
   const isImageUrl = result.thumbnail.includes('.jpg') || 
                      result.thumbnail.includes('.jpeg') || 
                      result.thumbnail.includes('.png') || 
@@ -78,17 +76,16 @@ function isValidImageResult(result: PortalResult): boolean {
                      result.thumbnail.includes('.webp') ||
                      result.thumbnail.includes('r2.dev');
   
-  // Also check that it's not just a generic category name
   const isNotCategory = !['Academic', 'Edutainment', 'Section', 'Category'].includes(result.title);
   
   return isImageUrl && isNotCategory;
 }
 
-// Direct portal API call - returns only valid image results
-async function fetchPortalResultsDirect(query: string, size: number = 10): Promise<PortalResult[]> {
+// Direct portal API call - returns only valid image results (limited to requested size)
+async function fetchPortalResultsDirect(query: string, size: number = CHATBOT_RESULTS_LIMIT): Promise<PortalResult[]> {
   try {
     console.log(`🔍 [PORTAL] Fetching: "${query}" (size: ${size})`);
-    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size}`;
+    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size + 5}`; // Fetch extra to filter
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -103,10 +100,12 @@ async function fetchPortalResultsDirect(query: string, size: number = 10): Promi
       return [];
     }
     
-    // Filter to only include valid image results
-    const validResults = data.results.filter((r: PortalResult) => isValidImageResult(r));
+    // Filter to only include valid image results and limit to requested size
+    const validResults = data.results
+      .filter((r: PortalResult) => isValidImageResult(r))
+      .slice(0, size);
     
-    console.log(`✅ [PORTAL] Found ${data.results.length} total, ${validResults.length} valid images for "${query}"`);
+    console.log(`✅ [PORTAL] Found ${validResults.length} valid images for "${query}"`);
     return validResults;
   } catch (error) {
     console.error('❌ [PORTAL] Error:', error);
@@ -121,7 +120,6 @@ function isGreeting(message: string): boolean {
   return GREETING_PATTERNS.some(p => p.test(message.trim().toLowerCase()));
 }
 
-// Find subject mu from query
 function findSubjectMu(query: string): number | null {
   const lowerQuery = query.toLowerCase();
   for (const [subj, mu] of Object.entries(SUBJECT_MU)) {
@@ -130,7 +128,6 @@ function findSubjectMu(query: string): number | null {
   return null;
 }
 
-// Parse class and subject from query
 function parseClassSubject(query: string): { classNum: number | null; subjectMu: number | null } {
   const classMatch = query.toLowerCase().match(/(?:class|grade|standard)\s*(\d+)/i);
   const subjectMu = findSubjectMu(query);
@@ -140,7 +137,6 @@ function parseClassSubject(query: string): { classNum: number | null; subjectMu:
   };
 }
 
-// Parse age from query
 function parseAge(query: string): number | null {
   const ageMatch = query.toLowerCase().match(/(?:age|year|years?\s*old)\s*(\d+)/i) || query.match(/(\d+)\s*(?:year|years?\s*old)/i);
   return ageMatch ? parseInt(ageMatch[1]) : null;
@@ -189,11 +185,9 @@ export const appRouter = router({
       .query(async ({ input }) => {
         if (input.query.length < 2) return { resources: [], images: [] };
         try {
-          // Fetch more results to filter, then limit to top 5
-          const portalResults = await fetchPortalResultsDirect(input.query, 10);
-          const limitedResults = portalResults.slice(0, CHATBOT_RESULTS_LIMIT);
+          const portalResults = await fetchPortalResultsDirect(input.query, CHATBOT_RESULTS_LIMIT);
           
-          const images = limitedResults.map((r: PortalResult) => ({
+          const images = portalResults.map((r: PortalResult) => ({
             id: r.code || r.title, 
             url: r.thumbnail || r.path, 
             title: r.title, 
@@ -203,10 +197,9 @@ export const appRouter = router({
           const { classNum, subjectMu } = parseClassSubject(input.query);
           const url = buildSmartUrl(input.query, classNum, subjectMu);
           
-          // Only show "Found X results" if we have valid image results
-          const resources = limitedResults.length > 0 ? [{
+          const resources = portalResults.length > 0 ? [{
             name: `Browse: "${input.query}"`, 
-            description: `Found ${limitedResults.length} results`, 
+            description: `Showing top ${portalResults.length} results`, 
             url: url,
           }] : [];
           
@@ -262,15 +255,11 @@ export const appRouter = router({
         const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
         console.log(`🔗 Resource URL: ${resourceUrl}`);
 
-        // Fetch results - get more to filter, then limit to top 5 for display
-        let portalResults = await fetchPortalResultsDirect(searchQuery, 20);
-        const totalResultsCount = portalResults.length;
-        
-        // Limit to top 5 for chatbot display
-        const displayResults = portalResults.slice(0, CHATBOT_RESULTS_LIMIT);
+        // Fetch top 5 results only
+        let portalResults = await fetchPortalResultsDirect(searchQuery, CHATBOT_RESULTS_LIMIT);
         
         // Check if we have valid image results
-        const hasRealResults = displayResults.length > 0;
+        const hasRealResults = portalResults.length > 0;
         
         // Build response
         let responseMessage: string;
@@ -280,22 +269,17 @@ export const appRouter = router({
         let searchType: string;
         
         if (hasRealResults) {
-          // Show top 5 results, mention total count
-          thumbnails = displayResults.map(r => ({ 
+          thumbnails = portalResults.map(r => ({ 
             url: r.path, 
             thumbnail: r.thumbnail, 
             title: r.title, 
             category: r.category 
           }));
           
-          if (totalResultsCount > CHATBOT_RESULTS_LIMIT) {
-            responseMessage = `Found ${totalResultsCount} images for "${searchQuery}". Showing top ${displayResults.length}. Click "Open Resource" to see all!`;
-          } else {
-            responseMessage = `Found ${displayResults.length} images for "${searchQuery}". Click below to explore!`;
-          }
-          
-          resourceName = `${totalResultsCount} images found`;
-          resourceDescription = displayResults.slice(0, 3).map(r => r.title).join(", ");
+          // Simple message: "Showing top X results for search"
+          responseMessage = `Showing top ${portalResults.length} results for "${searchQuery}". Click "Open Resource" to see all matching images!`;
+          resourceName = `Top ${portalResults.length} results`;
+          resourceDescription = portalResults.slice(0, 3).map(r => r.title).join(", ");
           searchType = "direct_search";
         } else {
           // No valid image results found
@@ -315,10 +299,10 @@ export const appRouter = router({
           language, 
           resultsCount: thumbnails.length, 
           topResultUrl: resourceUrl, 
-          topResultName: displayResults[0]?.title || "" 
+          topResultName: portalResults[0]?.title || "" 
         });
 
-        console.log(`✅ === SEARCH COMPLETE (${hasRealResults ? `${displayResults.length} shown of ${totalResultsCount}` : 'no results'}) ===\n`);
+        console.log(`✅ === SEARCH COMPLETE (${hasRealResults ? `showing ${portalResults.length}` : 'no results'}) ===\n`);
         
         return { 
           response: responseMessage, 

@@ -695,10 +695,10 @@ function isValidImageResult(result) {
   const isNotCategory = !["Academic", "Edutainment", "Section", "Category"].includes(result.title);
   return isImageUrl && isNotCategory;
 }
-async function fetchPortalResultsDirect(query, size = 10) {
+async function fetchPortalResultsDirect(query, size = CHATBOT_RESULTS_LIMIT) {
   try {
     console.log(`\u{1F50D} [PORTAL] Fetching: "${query}" (size: ${size})`);
-    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size}`;
+    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size + 5}`;
     const response = await fetch(url);
     if (!response.ok) {
       console.log(`\u26A0\uFE0F [PORTAL] API error: ${response.status}`);
@@ -709,8 +709,8 @@ async function fetchPortalResultsDirect(query, size = 10) {
       console.log(`\u26A0\uFE0F [PORTAL] No results for "${query}"`);
       return [];
     }
-    const validResults = data.results.filter((r) => isValidImageResult(r));
-    console.log(`\u2705 [PORTAL] Found ${data.results.length} total, ${validResults.length} valid images for "${query}"`);
+    const validResults = data.results.filter((r) => isValidImageResult(r)).slice(0, size);
+    console.log(`\u2705 [PORTAL] Found ${validResults.length} valid images for "${query}"`);
     return validResults;
   } catch (error) {
     console.error("\u274C [PORTAL] Error:", error);
@@ -775,9 +775,8 @@ var appRouter = router({
     autocomplete: publicProcedure.input(z.object({ query: z.string(), language: z.string().optional() })).query(async ({ input }) => {
       if (input.query.length < 2) return { resources: [], images: [] };
       try {
-        const portalResults = await fetchPortalResultsDirect(input.query, 10);
-        const limitedResults = portalResults.slice(0, CHATBOT_RESULTS_LIMIT);
-        const images = limitedResults.map((r) => ({
+        const portalResults = await fetchPortalResultsDirect(input.query, CHATBOT_RESULTS_LIMIT);
+        const images = portalResults.map((r) => ({
           id: r.code || r.title,
           url: r.thumbnail || r.path,
           title: r.title,
@@ -785,9 +784,9 @@ var appRouter = router({
         }));
         const { classNum, subjectMu } = parseClassSubject(input.query);
         const url = buildSmartUrl(input.query, classNum, subjectMu);
-        const resources = limitedResults.length > 0 ? [{
+        const resources = portalResults.length > 0 ? [{
           name: `Browse: "${input.query}"`,
-          description: `Found ${limitedResults.length} results`,
+          description: `Showing top ${portalResults.length} results`,
           url
         }] : [];
         return { resources, images };
@@ -836,29 +835,23 @@ var appRouter = router({
       const { classNum, subjectMu } = parseClassSubject(searchQuery);
       const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
       console.log(`\u{1F517} Resource URL: ${resourceUrl}`);
-      let portalResults = await fetchPortalResultsDirect(searchQuery, 20);
-      const totalResultsCount = portalResults.length;
-      const displayResults = portalResults.slice(0, CHATBOT_RESULTS_LIMIT);
-      const hasRealResults = displayResults.length > 0;
+      let portalResults = await fetchPortalResultsDirect(searchQuery, CHATBOT_RESULTS_LIMIT);
+      const hasRealResults = portalResults.length > 0;
       let responseMessage;
       let thumbnails = [];
       let resourceName = "";
       let resourceDescription = "";
       let searchType;
       if (hasRealResults) {
-        thumbnails = displayResults.map((r) => ({
+        thumbnails = portalResults.map((r) => ({
           url: r.path,
           thumbnail: r.thumbnail,
           title: r.title,
           category: r.category
         }));
-        if (totalResultsCount > CHATBOT_RESULTS_LIMIT) {
-          responseMessage = `Found ${totalResultsCount} images for "${searchQuery}". Showing top ${displayResults.length}. Click "Open Resource" to see all!`;
-        } else {
-          responseMessage = `Found ${displayResults.length} images for "${searchQuery}". Click below to explore!`;
-        }
-        resourceName = `${totalResultsCount} images found`;
-        resourceDescription = displayResults.slice(0, 3).map((r) => r.title).join(", ");
+        responseMessage = `Showing top ${portalResults.length} results for "${searchQuery}". Click "Open Resource" to see all matching images!`;
+        resourceName = `Top ${portalResults.length} results`;
+        resourceDescription = portalResults.slice(0, 3).map((r) => r.title).join(", ");
         searchType = "direct_search";
       } else {
         responseMessage = `No images found for "${searchQuery}". Try searching for:
@@ -879,9 +872,9 @@ var appRouter = router({
         language,
         resultsCount: thumbnails.length,
         topResultUrl: resourceUrl,
-        topResultName: displayResults[0]?.title || ""
+        topResultName: portalResults[0]?.title || ""
       });
-      console.log(`\u2705 === SEARCH COMPLETE (${hasRealResults ? `${displayResults.length} shown of ${totalResultsCount}` : "no results"}) ===
+      console.log(`\u2705 === SEARCH COMPLETE (${hasRealResults ? `showing ${portalResults.length}` : "no results"}) ===
 `);
       return {
         response: responseMessage,
