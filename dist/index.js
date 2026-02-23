@@ -625,6 +625,7 @@ IMPORTANT: Translate single words directly. "\u0C2A\u0C02\u0C21\u0C41" means "fr
 // server/routers.ts
 var BASE_URL = "https://portal.myschoolct.com";
 var PORTAL_API = "https://portal.myschoolct.com/api/rest/search/global";
+var CHATBOT_RESULTS_LIMIT = 5;
 var OCRC_CATEGORIES = {
   "animals": { path: "/views/academic/imagebank/animals", mu: 0 },
   "animal": { path: "/views/academic/imagebank/animals", mu: 0 },
@@ -688,9 +689,15 @@ var AGE_TO_CLASS = {
   14: "class-9",
   15: "class-10"
 };
-async function fetchPortalResultsDirect(query, size = 6) {
+function isValidImageResult(result) {
+  if (!result.thumbnail) return false;
+  const isImageUrl = result.thumbnail.includes(".jpg") || result.thumbnail.includes(".jpeg") || result.thumbnail.includes(".png") || result.thumbnail.includes(".gif") || result.thumbnail.includes(".webp") || result.thumbnail.includes("r2.dev");
+  const isNotCategory = !["Academic", "Edutainment", "Section", "Category"].includes(result.title);
+  return isImageUrl && isNotCategory;
+}
+async function fetchPortalResultsDirect(query, size = 10) {
   try {
-    console.log(`\u{1F50D} [PORTAL DIRECT] Fetching: "${query}"`);
+    console.log(`\u{1F50D} [PORTAL] Fetching: "${query}" (size: ${size})`);
     const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -698,12 +705,13 @@ async function fetchPortalResultsDirect(query, size = 6) {
       return [];
     }
     const data = await response.json();
-    if (data.results && data.results.length > 0) {
-      console.log(`\u2705 [PORTAL DIRECT] Found ${data.results.length} results`);
-      return data.results;
+    if (!data.results || data.results.length === 0) {
+      console.log(`\u26A0\uFE0F [PORTAL] No results for "${query}"`);
+      return [];
     }
-    console.log(`\u26A0\uFE0F [PORTAL DIRECT] No results for "${query}"`);
-    return [];
+    const validResults = data.results.filter((r) => isValidImageResult(r));
+    console.log(`\u2705 [PORTAL] Found ${data.results.length} total, ${validResults.length} valid images for "${query}"`);
+    return validResults;
   } catch (error) {
     console.error("\u274C [PORTAL] Error:", error);
     return [];
@@ -767,8 +775,9 @@ var appRouter = router({
     autocomplete: publicProcedure.input(z.object({ query: z.string(), language: z.string().optional() })).query(async ({ input }) => {
       if (input.query.length < 2) return { resources: [], images: [] };
       try {
-        const portalResults = await fetchPortalResultsDirect(input.query, 6);
-        const images = portalResults.map((r) => ({
+        const portalResults = await fetchPortalResultsDirect(input.query, 10);
+        const limitedResults = portalResults.slice(0, CHATBOT_RESULTS_LIMIT);
+        const images = limitedResults.map((r) => ({
           id: r.code || r.title,
           url: r.thumbnail || r.path,
           title: r.title,
@@ -776,9 +785,9 @@ var appRouter = router({
         }));
         const { classNum, subjectMu } = parseClassSubject(input.query);
         const url = buildSmartUrl(input.query, classNum, subjectMu);
-        const resources = portalResults.length > 0 ? [{
+        const resources = limitedResults.length > 0 ? [{
           name: `Browse: "${input.query}"`,
-          description: `Found ${portalResults.length} results`,
+          description: `Found ${limitedResults.length} results`,
           url
         }] : [];
         return { resources, images };
@@ -826,25 +835,36 @@ var appRouter = router({
       }
       const { classNum, subjectMu } = parseClassSubject(searchQuery);
       const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
-      console.log(`\u{1F517} Smart URL: ${resourceUrl}`);
-      let portalResults = await fetchPortalResultsDirect(searchQuery, 6);
-      const hasRealResults = portalResults.length > 0;
+      console.log(`\u{1F517} Resource URL: ${resourceUrl}`);
+      let portalResults = await fetchPortalResultsDirect(searchQuery, 20);
+      const totalResultsCount = portalResults.length;
+      const displayResults = portalResults.slice(0, CHATBOT_RESULTS_LIMIT);
+      const hasRealResults = displayResults.length > 0;
       let responseMessage;
       let thumbnails = [];
       let resourceName = "";
       let resourceDescription = "";
       let searchType;
       if (hasRealResults) {
-        thumbnails = portalResults.map((r) => ({ url: r.path, thumbnail: r.thumbnail, title: r.title, category: r.category }));
-        responseMessage = `Found ${portalResults.length} results for "${searchQuery}". Click below to explore!`;
-        resourceName = `${portalResults.length} resources found`;
-        resourceDescription = portalResults.slice(0, 3).map((r) => r.title).join(", ");
+        thumbnails = displayResults.map((r) => ({
+          url: r.path,
+          thumbnail: r.thumbnail,
+          title: r.title,
+          category: r.category
+        }));
+        if (totalResultsCount > CHATBOT_RESULTS_LIMIT) {
+          responseMessage = `Found ${totalResultsCount} images for "${searchQuery}". Showing top ${displayResults.length}. Click "Open Resource" to see all!`;
+        } else {
+          responseMessage = `Found ${displayResults.length} images for "${searchQuery}". Click below to explore!`;
+        }
+        resourceName = `${totalResultsCount} images found`;
+        resourceDescription = displayResults.slice(0, 3).map((r) => r.title).join(", ");
         searchType = "direct_search";
       } else {
         responseMessage = `No images found for "${searchQuery}". Try searching for:
 \u2022 Common topics like "animals", "fruits", "flowers"
 \u2022 Class-based content like "Class 5 Maths"
-\u2022 Or browse our resource categories above!`;
+\u2022 Or browse our resource categories!`;
         resourceName = "";
         resourceDescription = "";
         searchType = "no_results";
@@ -852,8 +872,16 @@ var appRouter = router({
       }
       await saveChatMessage({ sessionId, role: "user", message, language });
       await saveChatMessage({ sessionId, role: "assistant", message: responseMessage, language: "en" });
-      await logSearchQuery({ sessionId, query: searchQuery, translatedQuery: searchQuery !== message ? searchQuery : null, language, resultsCount: thumbnails.length, topResultUrl: resourceUrl, topResultName: portalResults[0]?.title || "" });
-      console.log(`\u2705 === SEARCH COMPLETE (${hasRealResults ? "found" : "no results"}) ===
+      await logSearchQuery({
+        sessionId,
+        query: searchQuery,
+        translatedQuery: searchQuery !== message ? searchQuery : null,
+        language,
+        resultsCount: thumbnails.length,
+        topResultUrl: resourceUrl,
+        topResultName: displayResults[0]?.title || ""
+      });
+      console.log(`\u2705 === SEARCH COMPLETE (${hasRealResults ? `${displayResults.length} shown of ${totalResultsCount}` : "no results"}) ===
 `);
       return {
         response: responseMessage,
