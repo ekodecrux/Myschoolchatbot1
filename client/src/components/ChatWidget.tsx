@@ -225,7 +225,7 @@ export function ChatWidget({ autoOpen = false, isEmbedded = false }: ChatWidgetP
               <GraduationCap className="h-6 w-6 text-white" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-base leading-tight">MySchool Assistant</h3>
+              <h3 className="font-semibold text-base leading-tight">MySchool Help</h3>
               <p className="text-[11px] opacity-90">Your intelligent guide</p>
             </div>
           </div>
@@ -251,7 +251,7 @@ export function ChatWidget({ autoOpen = false, isEmbedded = false }: ChatWidgetP
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-100 to-pink-50 flex items-center justify-center mb-4 shadow-lg">
-              <Bot className="h-10 w-10 text-pink-500" />
+              <GraduationCap className="h-10 w-10 text-pink-500" />
             </div>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Welcome!</h3>
             <p className="text-sm text-gray-500 max-w-[250px]">I'm your MySchool Navigator. Ask me about classes, subjects, or resources!</p>
@@ -277,7 +277,7 @@ export function ChatWidget({ autoOpen = false, isEmbedded = false }: ChatWidgetP
           >
             {msg.role === "assistant" && (
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center shadow-md flex-shrink-0">
-                <Bot className="h-4 w-4 text-white" />
+                <GraduationCap className="h-4 w-4 text-white" />
               </div>
             )}
             <div className={`max-w-[80%] p-3.5 shadow-md ${msg.role === "user" 
@@ -359,7 +359,7 @@ export function ChatWidget({ autoOpen = false, isEmbedded = false }: ChatWidgetP
         {chatMutation.isPending && (
           <div className="flex items-end gap-2 justify-start animate-in slide-in-from-bottom-2">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-pink-600 flex items-center justify-center shadow-md">
-              <Bot className="h-4 w-4 text-white" />
+              <GraduationCap className="h-4 w-4 text-white" />
             </div>
             <div className="bg-white p-4 rounded-2xl rounded-bl-md shadow-md border border-gray-100">
               <div className="flex gap-1.5">

@@ -250,7 +250,7 @@ export const appRouter = router({
         // Greeting check
         if (isGreeting(message)) {
           console.log(\`👋 Greeting detected\`);
-          let aiMessage = "Hello! I'm your MySchool Assistant. How can I help you find educational resources today?";
+          let aiMessage = "Hello! Welcome to MySchool. How can I help you find educational resources today?";
           try { const r = await getAIResponse(message, history); if (r.message) aiMessage = r.message; } catch (e) {}
           await saveChatMessage({ sessionId, role: "user", message, language });
           await saveChatMessage({ sessionId, role: "assistant", message: aiMessage, language: "en" });
