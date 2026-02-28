@@ -81,22 +81,41 @@ function isValidImageResult(result: PortalResult): boolean {
   return isImageUrl && isNotCategory;
 }
 
+// Normalize class queries: "3rd class", "3 rd class", "class 3" all become "class 3"
+function normalizeClassQuery(query: string): string {
+  let normalized = query.toLowerCase().trim();
+  
+  // Pattern 1: "3rd class", "3 rd class", "3rd-class" -> "class 3"
+  normalized = normalized.replace(/(\d+)\s*(?:st|nd|rd|th)?\s*[-]?\s*class/gi, 'class $1');
+  
+  // Pattern 2: "class-3" -> "class 3"
+  normalized = normalized.replace(/class\s*-\s*(\d+)/gi, 'class $1');
+  
+  // Clean up extra spaces
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+  
+  return normalized;
+}
+
 // Direct portal API call - returns only valid image results (limited to requested size)
 async function fetchPortalResultsDirect(query: string, size: number = CHATBOT_RESULTS_LIMIT): Promise<PortalResult[]> {
   try {
-    console.log(`🔍 [PORTAL] Fetching: "${query}" (size: ${size})`);
-    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size + 5}`; // Fetch extra to filter
+    // Normalize the query for consistent results
+    const normalizedQuery = normalizeClassQuery(query);
+    console.log(\`🔍 [PORTAL] Fetching: "\${query}" -> normalized: "\${normalizedQuery}" (size: \${size})\`);
+    
+    const url = \`\${PORTAL_API}?query=\${encodeURIComponent(normalizedQuery)}&size=\${size + 5}\`; // Fetch extra to filter
     const response = await fetch(url);
     
     if (!response.ok) {
-      console.log(`⚠️ [PORTAL] API error: ${response.status}`);
+      console.log(\`⚠️ [PORTAL] API error: \${response.status}\`);
       return [];
     }
     
     const data = await response.json();
     
     if (!data.results || data.results.length === 0) {
-      console.log(`⚠️ [PORTAL] No results for "${query}"`);
+      console.log(\`⚠️ [PORTAL] No results for "\${normalizedQuery}"\`);
       return [];
     }
     
@@ -105,7 +124,7 @@ async function fetchPortalResultsDirect(query: string, size: number = CHATBOT_RE
       .filter((r: PortalResult) => isValidImageResult(r))
       .slice(0, size);
     
-    console.log(`✅ [PORTAL] Found ${validResults.length} valid images for "${query}"`);
+    console.log(\`✅ [PORTAL] Found \${validResults.length} valid images for "\${normalizedQuery}"\`);
     return validResults;
   } catch (error) {
     console.error('❌ [PORTAL] Error:', error);
@@ -129,8 +148,13 @@ function findSubjectMu(query: string): number | null {
 }
 
 function parseClassSubject(query: string): { classNum: number | null; subjectMu: number | null } {
-  const classMatch = query.toLowerCase().match(/(?:class|grade|standard)\s*(\d+)/i);
-  const subjectMu = findSubjectMu(query);
+  // Normalize the query first
+  const normalizedQuery = normalizeClassQuery(query);
+  
+  // Match "class X" pattern (after normalization)
+  const classMatch = normalizedQuery.match(/class\s*(\d+)/i);
+  const subjectMu = findSubjectMu(normalizedQuery);
+  
   return {
     classNum: classMatch ? parseInt(classMatch[1]) : null,
     subjectMu
@@ -146,36 +170,38 @@ function buildSmartUrl(query: string, classNum: number | null, subjectMu: number
   const lowerQuery = query.toLowerCase().trim();
 
   if (OCRC_CATEGORIES[lowerQuery]) {
-    return `${BASE_URL}${OCRC_CATEGORIES[lowerQuery].path}?main=2&mu=${OCRC_CATEGORIES[lowerQuery].mu}`;
+    return \`\${BASE_URL}\${OCRC_CATEGORIES[lowerQuery].path}?main=2&mu=\${OCRC_CATEGORIES[lowerQuery].mu}\`;
   }
 
   const age = parseAge(lowerQuery);
   if (age && AGE_TO_CLASS[age]) {
     const className = AGE_TO_CLASS[age];
     if (subjectMu !== null) {
-      return `${BASE_URL}/views/academic/class/${className}?main=0&mu=${subjectMu}`;
+      return \`\${BASE_URL}/views/academic/class/\${className}?main=0&mu=\${subjectMu}\`;
     }
-    return `${BASE_URL}/views/academic/class/${className}`;
+    return \`\${BASE_URL}/views/academic/class/\${className}\`;
   }
 
   if (classNum && classNum >= 1 && classNum <= 10) {
-    const className = `class-${classNum}`;
+    const className = \`class-\${classNum}\`;
     if (subjectMu !== null) {
-      return `${BASE_URL}/views/academic/class/${className}?main=0&mu=${subjectMu}`;
+      return \`\${BASE_URL}/views/academic/class/\${className}?main=0&mu=\${subjectMu}\`;
     }
-    return `${BASE_URL}/views/academic/class/${className}`;
+    return \`\${BASE_URL}/views/academic/class/\${className}\`;
   }
 
   const kinderMatch = lowerQuery.match(/\b(nursery|lkg|ukg)\b/i);
   if (kinderMatch) {
     const kinderClass = kinderMatch[1].toLowerCase();
     if (subjectMu !== null) {
-      return `${BASE_URL}/views/academic/class/${kinderClass}?main=0&mu=${subjectMu}`;
+      return \`\${BASE_URL}/views/academic/class/\${kinderClass}?main=0&mu=\${subjectMu}\`;
     }
-    return `${BASE_URL}/views/academic/class/${kinderClass}`;
+    return \`\${BASE_URL}/views/academic/class/\${kinderClass}\`;
   }
 
-  return `${BASE_URL}/views/result?text=${encodeURIComponent(query)}`;
+  // Use normalized query for the search URL
+  const normalizedQuery = normalizeClassQuery(query);
+  return \`\${BASE_URL}/views/result?text=\${encodeURIComponent(normalizedQuery)}\`;
 }
 
 export const appRouter = router({
@@ -198,8 +224,8 @@ export const appRouter = router({
           const url = buildSmartUrl(input.query, classNum, subjectMu);
           
           const resources = portalResults.length > 0 ? [{
-            name: `Browse: "${input.query}"`, 
-            description: `Showing top ${portalResults.length} results`, 
+            name: \`Browse: "\${input.query}"\`, 
+            description: \`Showing top \${portalResults.length} results\`, 
             url: url,
           }] : [];
           
@@ -219,11 +245,11 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const { message, sessionId, language = "en", history = [] } = input;
-        console.log(`\n🎯 === SEARCH START: "${message}" ===`);
+        console.log(\`\n🎯 === SEARCH START: "\${message}" ===\`);
 
         // Greeting check
         if (isGreeting(message)) {
-          console.log(`👋 Greeting detected`);
+          console.log(\`👋 Greeting detected\`);
           let aiMessage = "Hello! I'm your MySchool Assistant. How can I help you find educational resources today?";
           try { const r = await getAIResponse(message, history); if (r.message) aiMessage = r.message; } catch (e) {}
           await saveChatMessage({ sessionId, role: "user", message, language });
@@ -248,15 +274,19 @@ export const appRouter = router({
           } catch (e) {}
         }
 
-        // Parse class/subject
+        // Normalize the search query for class-related searches
+        const normalizedSearchQuery = normalizeClassQuery(searchQuery);
+        console.log(\`📝 Original: "\${searchQuery}" -> Normalized: "\${normalizedSearchQuery}"\`);
+
+        // Parse class/subject from normalized query
         const { classNum, subjectMu } = parseClassSubject(searchQuery);
 
         // Build URL that will show ALL results when clicked
         const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
-        console.log(`🔗 Resource URL: ${resourceUrl}`);
+        console.log(\`🔗 Resource URL: \${resourceUrl}\`);
 
-        // Fetch top 5 results only
-        let portalResults = await fetchPortalResultsDirect(searchQuery, CHATBOT_RESULTS_LIMIT);
+        // Fetch top 5 results using normalized query
+        let portalResults = await fetchPortalResultsDirect(normalizedSearchQuery, CHATBOT_RESULTS_LIMIT);
         
         // Check if we have valid image results
         const hasRealResults = portalResults.length > 0;
@@ -277,13 +307,13 @@ export const appRouter = router({
           }));
           
           // Simple message: "Showing top X results for search"
-          responseMessage = `Showing top ${portalResults.length} results for "${searchQuery}". Click "Open Resource" to see all matching images!`;
-          resourceName = `Top ${portalResults.length} results`;
+          responseMessage = \`Showing top \${portalResults.length} results for "\${searchQuery}". Click "Open Resource" to see all matching images!\`;
+          resourceName = \`Top \${portalResults.length} results\`;
           resourceDescription = portalResults.slice(0, 3).map(r => r.title).join(", ");
           searchType = "direct_search";
         } else {
           // No valid image results found
-          responseMessage = `No images found for "${searchQuery}". Try searching for:\n• Common topics like "animals", "fruits", "flowers"\n• Class-based content like "Class 5 Maths"\n• Or browse our resource categories!`;
+          responseMessage = \`No images found for "\${searchQuery}". Try searching for:\n• Common topics like "animals", "fruits", "flowers"\n• Class-based content like "Class 5 Maths"\n• Or browse our resource categories!\`;
           resourceName = "";
           resourceDescription = "";
           searchType = "no_results";
@@ -294,7 +324,7 @@ export const appRouter = router({
         await saveChatMessage({ sessionId, role: "assistant", message: responseMessage, language: "en" });
         await logSearchQuery({ 
           sessionId, 
-          query: searchQuery, 
+          query: normalizedSearchQuery, 
           translatedQuery: searchQuery !== message ? searchQuery : null, 
           language, 
           resultsCount: thumbnails.length, 
@@ -302,7 +332,7 @@ export const appRouter = router({
           topResultName: portalResults[0]?.title || "" 
         });
 
-        console.log(`✅ === SEARCH COMPLETE (${hasRealResults ? `showing ${portalResults.length}` : 'no results'}) ===\n`);
+        console.log(\`✅ === SEARCH COMPLETE (\${hasRealResults ? \`showing \${portalResults.length}\` : 'no results'}) ===\n\`);
         
         return { 
           response: responseMessage, 
