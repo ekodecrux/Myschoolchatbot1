@@ -475,7 +475,7 @@ import Groq from "groq-sdk";
 var groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
-var SYSTEM_PROMPT = `You are MySchool Assistant for portal.myschoolct.com.
+var SYSTEM_PROMPT = `You are the MySchool Help Desk for portal.myschoolct.com.
 
 Your role: Help users find educational resources quickly.
 
@@ -486,7 +486,7 @@ RULES (FOLLOW STRICTLY):
 
 1. GREETINGS - Use searchType: "greeting", searchQuery: null
    Examples: hi, hello, hey, how are you, good morning, what's up, howdy, greetings
-   Response: {"message": "Hello! I'm your MySchool Assistant. How can I help you find educational resources today?", "searchQuery": null, "searchType": "greeting", "classNum": null, "subject": null, "suggestions": ["Search for animals", "Class 5 Maths", "Exam tips"]}
+   Response: {"message": "Hello! Welcome to MySchool. How can I help you find educational resources today?", "searchQuery": null, "searchType": "greeting", "classNum": null, "subject": null, "suggestions": ["Search for animals", "Class 5 Maths", "Exam tips"]}
 
 2. CLASS + SUBJECT - Use searchType: "class_subject" (ONLY when class number is specified)
    Examples: class 5 maths, class 3 science, grade 10 english
@@ -508,6 +508,7 @@ IMPORTANT:
 - Conversational queries like "how are you", "what can you do", "help me" are GREETINGS
 - Only use class_subject when user explicitly mentions a class NUMBER (1-10)
 - searchQuery should be the exact search term, not modified
+- Never refer to yourself as AI, bot, or assistant - you are MySchool Help Desk
 `;
 async function getAIResponse(userMessage, history = []) {
   try {
@@ -535,7 +536,7 @@ async function getAIResponse(userMessage, history = []) {
   } catch (error) {
     console.error("Groq error:", error);
     return {
-      message: "Hello! How can I help you find educational resources today?",
+      message: "Hello! Welcome to MySchool. How can I help you find educational resources?",
       searchQuery: null,
       searchType: "greeting",
       classNum: null,
@@ -574,30 +575,43 @@ var groq2 = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1"
 });
 async function translateAndExtractKeyword(text2) {
-  if (/^[a-zA-Z0-9\s.,!?-]+$/.test(text2)) {
+  if (/^[a-zA-Z0-9\s.,!?'-]+$/.test(text2)) {
+    console.log(`[Translation] Text is already English: "${text2}"`);
     return { translatedText: text2, keyword: text2 };
   }
   try {
+    console.log(`[Translation] Translating: "${text2}"`);
     const response = await groq2.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         {
           role: "system",
-          content: `You are a translation assistant for MySchool educational portal. 
+          content: `You are a translation assistant for MySchool educational portal.
+
 Your task:
-1. Detect the language (Telugu, Hindi, Gujarati, Tamil, or other Indian languages)
+1. Detect the language (Telugu, Hindi, Gujarati, Tamil, Kannada, Malayalam, or other Indian languages)
 2. Translate the input to English accurately
-3. Extract the most important keyword for educational resource search
+3. Extract the most important English keyword for educational resource search
 
-Return JSON format: {"translatedText": "...", "keyword": "..."}
+Return ONLY valid JSON format: {"translatedText": "english translation", "keyword": "search_keyword"}
 
-Examples:
-Telugu "\u0C1C\u0C02\u0C24\u0C41\u0C35\u0C41\u0C32 \u0C1A\u0C3F\u0C24\u0C4D\u0C30\u0C3E\u0C32\u0C41" \u2192 {"translatedText": "animal images", "keyword": "animals"}
-Telugu "\u0C2A\u0C02\u0C21\u0C41" \u2192 {"translatedText": "fruit", "keyword": "fruit"}
-Hindi "\u0915\u0915\u094D\u0937\u093E 5 \u0917\u0923\u093F\u0924" \u2192 {"translatedText": "class 5 maths", "keyword": "maths"}
-Gujarati "\u0AB5\u0ABF\u0A9C\u0ACD\u0A9E\u0ABE\u0AA8 \u0AAA\u0AB0\u0AC0\u0A95\u0ACD\u0AB7\u0ABE" \u2192 {"translatedText": "science exam", "keyword": "science"}
+IMPORTANT EXAMPLES:
+- Telugu "\u0C2A\u0C02\u0C21\u0C4D\u0C32\u0C41" or "\u0C2A\u0C02\u0C21\u0C41" \u2192 {"translatedText": "fruits", "keyword": "fruits"}
+- Telugu "\u0C2A\u0C42\u0C32\u0C41" or "\u0C2A\u0C42\u0C32 \u0C2E\u0C4A\u0C15\u0C4D\u0C15\u0C32\u0C41" \u2192 {"translatedText": "flowers", "keyword": "flowers"}
+- Telugu "\u0C1C\u0C02\u0C24\u0C41\u0C35\u0C41\u0C32\u0C41" \u2192 {"translatedText": "animals", "keyword": "animals"}
+- Telugu "\u0C2A\u0C15\u0C4D\u0C37\u0C41\u0C32\u0C41" \u2192 {"translatedText": "birds", "keyword": "birds"}
+- Telugu "\u0C15\u0C42\u0C30\u0C17\u0C3E\u0C2F\u0C32\u0C41" \u2192 {"translatedText": "vegetables", "keyword": "vegetables"}
+- Hindi "\u092B\u0932" \u2192 {"translatedText": "fruits", "keyword": "fruits"}
+- Hindi "\u092B\u0942\u0932" \u2192 {"translatedText": "flowers", "keyword": "flowers"}
+- Hindi "\u091C\u093E\u0928\u0935\u0930" \u2192 {"translatedText": "animals", "keyword": "animals"}
+- Hindi "\u0915\u0915\u094D\u0937\u093E 5 \u0917\u0923\u093F\u0924" \u2192 {"translatedText": "class 5 maths", "keyword": "class 5 maths"}
+- Tamil "\u0BAA\u0BB4\u0B99\u0BCD\u0B95\u0BB3\u0BCD" \u2192 {"translatedText": "fruits", "keyword": "fruits"}
+- Kannada "\u0CB9\u0CA3\u0CCD\u0CA3\u0CC1\u0C97\u0CB3\u0CC1" \u2192 {"translatedText": "fruits", "keyword": "fruits"}
 
-IMPORTANT: Translate single words directly. "\u0C2A\u0C02\u0C21\u0C41" means "fruit" in English.`
+RULES:
+- keyword should be a simple English word suitable for image search
+- For class/grade queries, include class number in keyword
+- Always return valid JSON, never return empty strings`
         },
         {
           role: "user",
@@ -605,19 +619,21 @@ IMPORTANT: Translate single words directly. "\u0C2A\u0C02\u0C21\u0C41" means "fr
         }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.3,
+      temperature: 0.1,
       max_tokens: 150
     });
-    const result = JSON.parse(response.choices[0].message.content || '{"translatedText": "", "keyword": ""}');
+    const content = response.choices[0].message.content || "{}";
+    console.log(`[Translation] Raw response: ${content}`);
+    const result = JSON.parse(content);
     const translatedText = result.translatedText?.trim() || text2;
     const keyword = result.keyword?.trim() || translatedText;
-    console.log(`[Translation] Original: "${text2}" \u2192 Translated: "${translatedText}" (Keyword: "${keyword}")`);
+    console.log(`[Translation] SUCCESS: "${text2}" \u2192 Translated: "${translatedText}" (Keyword: "${keyword}")`);
     return {
       translatedText,
       keyword
     };
   } catch (error) {
-    console.error("Translation error:", error);
+    console.error("[Translation] Error:", error);
     return { translatedText: text2, keyword: text2 };
   }
 }
@@ -660,6 +676,7 @@ var SUBJECT_MU = {
   "maths": 4,
   "math": 4,
   "mathematics": 4,
+  "mathes": 4,
   "gk": 5,
   "general knowledge": 5,
   "computer": 6,
@@ -673,6 +690,32 @@ var SUBJECT_MU = {
   "story": 9,
   "charts": 10,
   "chart": 10
+};
+var SUBJECT_NAMES = {
+  "english": "english",
+  "eng": "english",
+  "hindi": "hindi",
+  "telugu": "telugu",
+  "evs": "evs",
+  "science": "science",
+  "sci": "science",
+  "maths": "maths",
+  "math": "maths",
+  "mathematics": "maths",
+  "mathes": "maths",
+  "gk": "general knowledge",
+  "general knowledge": "general knowledge",
+  "computer": "computer",
+  "computers": "computer",
+  "it": "computer",
+  "art": "art",
+  "drawing": "art",
+  "craft": "craft",
+  "crafts": "craft",
+  "stories": "stories",
+  "story": "stories",
+  "charts": "charts",
+  "chart": "charts"
 };
 var AGE_TO_CLASS = {
   3: "nursery",
@@ -694,6 +737,20 @@ function isValidImageResult(result) {
   const isImageUrl = result.thumbnail.includes(".jpg") || result.thumbnail.includes(".jpeg") || result.thumbnail.includes(".png") || result.thumbnail.includes(".gif") || result.thumbnail.includes(".webp") || result.thumbnail.includes("r2.dev");
   const isNotCategory = !["Academic", "Edutainment", "Section", "Category"].includes(result.title);
   return isImageUrl && isNotCategory;
+}
+function normalizeClassQuery(query) {
+  let normalized = query.toLowerCase().trim();
+  normalized = normalized.replace(/(\d+)\s*(?:st|nd|rd|th)?\s*[-]?\s*class/gi, "class $1");
+  normalized = normalized.replace(/class\s*-\s*(\d+)/gi, "class $1");
+  normalized = normalized.replace(/\s+/g, " ").trim();
+  return normalized;
+}
+function findSubjectName(query) {
+  const lowerQuery = query.toLowerCase();
+  for (const [subj, name] of Object.entries(SUBJECT_NAMES)) {
+    if (lowerQuery.includes(subj)) return name;
+  }
+  return null;
 }
 async function fetchPortalResultsDirect(query, size = CHATBOT_RESULTS_LIMIT) {
   try {
@@ -729,11 +786,14 @@ function findSubjectMu(query) {
   return null;
 }
 function parseClassSubject(query) {
-  const classMatch = query.toLowerCase().match(/(?:class|grade|standard)\s*(\d+)/i);
-  const subjectMu = findSubjectMu(query);
+  const normalizedQuery = normalizeClassQuery(query);
+  const classMatch = normalizedQuery.match(/class\s*(\d+)/i);
+  const subjectMu = findSubjectMu(normalizedQuery);
+  const subjectName = findSubjectName(normalizedQuery);
   return {
     classNum: classMatch ? parseInt(classMatch[1]) : null,
-    subjectMu
+    subjectMu,
+    subjectName
   };
 }
 function parseAge(query) {
@@ -768,24 +828,44 @@ function buildSmartUrl(query, classNum, subjectMu) {
     }
     return `${BASE_URL}/views/academic/class/${kinderClass}`;
   }
-  return `${BASE_URL}/views/result?text=${encodeURIComponent(query)}`;
+  const normalizedQuery = normalizeClassQuery(query);
+  return `${BASE_URL}/views/result?text=${encodeURIComponent(normalizedQuery)}`;
+}
+function buildSearchQuery(query, classNum, subjectName) {
+  if (classNum && subjectName) {
+    return `class ${classNum} ${subjectName}`;
+  }
+  return normalizeClassQuery(query);
+}
+function isNonEnglish(text2) {
+  return !/^[a-zA-Z0-9\s.,!?'-]+$/.test(text2);
 }
 var appRouter = router({
   chatbot: router({
     autocomplete: publicProcedure.input(z.object({ query: z.string(), language: z.string().optional() })).query(async ({ input }) => {
       if (input.query.length < 2) return { resources: [], images: [] };
       try {
-        const portalResults = await fetchPortalResultsDirect(input.query, CHATBOT_RESULTS_LIMIT);
+        let searchQuery = input.query;
+        if (isNonEnglish(input.query)) {
+          try {
+            const translationResult = await translateAndExtractKeyword(input.query);
+            searchQuery = translationResult.keyword || translationResult.translatedText || input.query;
+            console.log(`\u{1F310} [AUTOCOMPLETE] Translated "${input.query}" -> "${searchQuery}"`);
+          } catch (e) {
+            console.error("Translation error in autocomplete:", e);
+          }
+        }
+        const portalResults = await fetchPortalResultsDirect(searchQuery, CHATBOT_RESULTS_LIMIT);
         const images = portalResults.map((r) => ({
           id: r.code || r.title,
           url: r.thumbnail || r.path,
           title: r.title,
           category: r.category
         }));
-        const { classNum, subjectMu } = parseClassSubject(input.query);
-        const url = buildSmartUrl(input.query, classNum, subjectMu);
+        const { classNum, subjectMu } = parseClassSubject(searchQuery);
+        const url = buildSmartUrl(searchQuery, classNum, subjectMu);
         const resources = portalResults.length > 0 ? [{
-          name: `Browse: "${input.query}"`,
+          name: `Browse: "${searchQuery}"`,
           description: `Showing top ${portalResults.length} results`,
           url
         }] : [];
@@ -803,10 +883,10 @@ var appRouter = router({
     })).mutation(async ({ input }) => {
       const { message, sessionId, language = "en", history = [] } = input;
       console.log(`
-\u{1F3AF} === SEARCH START: "${message}" ===`);
+\u{1F3AF} === SEARCH START: "${message}" (language: ${language}) ===`);
       if (isGreeting(message)) {
         console.log(`\u{1F44B} Greeting detected`);
-        let aiMessage = "Hello! I'm your MySchool Assistant. How can I help you find educational resources today?";
+        let aiMessage = "Hello! Welcome to MySchool. How can I help you find educational resources today?";
         try {
           const r = await getAIResponse(message, history);
           if (r.message) aiMessage = r.message;
@@ -825,23 +905,38 @@ var appRouter = router({
         };
       }
       let searchQuery = message;
-      if (language && language !== "en") {
+      let translatedKeyword = message;
+      let wasTranslated = false;
+      if (isNonEnglish(message) || language && language !== "en") {
         try {
-          const r = await translateAndExtractKeyword(message, language);
-          searchQuery = r.translated || message;
+          console.log(`\u{1F310} [TRANSLATION] Detected non-English text: "${message}"`);
+          const translationResult = await translateAndExtractKeyword(message);
+          translatedKeyword = translationResult.keyword || translationResult.translatedText || message;
+          if (translatedKeyword.toLowerCase() !== message.toLowerCase()) {
+            searchQuery = translatedKeyword;
+            wasTranslated = true;
+            console.log(`\u{1F310} [TRANSLATION] SUCCESS: "${message}" -> keyword: "${translatedKeyword}", full: "${translationResult.translatedText}"`);
+          } else {
+            console.log(`\u{1F310} [TRANSLATION] No translation needed or same result`);
+          }
         } catch (e) {
+          console.error(`\u{1F310} [TRANSLATION] Error:`, e);
         }
       }
-      const { classNum, subjectMu } = parseClassSubject(searchQuery);
+      const { classNum, subjectMu, subjectName } = parseClassSubject(searchQuery);
+      const optimizedSearchQuery = buildSearchQuery(searchQuery, classNum, subjectName);
+      console.log(`\u{1F4DD} Search query: "${searchQuery}" -> Optimized: "${optimizedSearchQuery}"`);
+      console.log(`\u{1F4DA} Parsed: classNum=${classNum}, subjectName=${subjectName}, subjectMu=${subjectMu}`);
       const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
       console.log(`\u{1F517} Resource URL: ${resourceUrl}`);
-      let portalResults = await fetchPortalResultsDirect(searchQuery, CHATBOT_RESULTS_LIMIT);
+      let portalResults = await fetchPortalResultsDirect(optimizedSearchQuery, CHATBOT_RESULTS_LIMIT);
       const hasRealResults = portalResults.length > 0;
       let responseMessage;
       let thumbnails = [];
       let resourceName = "";
       let resourceDescription = "";
       let searchType;
+      const displayQuery = wasTranslated ? `"${message}" (${translatedKeyword})` : `"${searchQuery}"`;
       if (hasRealResults) {
         thumbnails = portalResults.map((r) => ({
           url: r.path,
@@ -849,15 +944,29 @@ var appRouter = router({
           title: r.title,
           category: r.category
         }));
-        responseMessage = `Showing top ${portalResults.length} results for "${searchQuery}". Click "Open Resource" to see all matching images!`;
+        if (classNum && subjectName) {
+          const subjectDisplay = subjectName.charAt(0).toUpperCase() + subjectName.slice(1);
+          responseMessage = `Showing Class ${classNum} ${subjectDisplay} resources! Found ${portalResults.length} results. Click "Open Resource" to see more!`;
+        } else if (wasTranslated) {
+          responseMessage = `Found ${portalResults.length} results for ${displayQuery}. Click "Open Resource" to see all!`;
+        } else {
+          responseMessage = `Showing top ${portalResults.length} results for ${displayQuery}. Click "Open Resource" to see all matching images!`;
+        }
         resourceName = `Top ${portalResults.length} results`;
         resourceDescription = portalResults.slice(0, 3).map((r) => r.title).join(", ");
         searchType = "direct_search";
       } else {
-        responseMessage = `No images found for "${searchQuery}". Try searching for:
+        if (wasTranslated) {
+          responseMessage = `No images found for ${displayQuery}. Try searching for:
 \u2022 Common topics like "animals", "fruits", "flowers"
 \u2022 Class-based content like "Class 5 Maths"
 \u2022 Or browse our resource categories!`;
+        } else {
+          responseMessage = `No images found for "${searchQuery}". Try searching for:
+\u2022 Common topics like "animals", "fruits", "flowers"
+\u2022 Class-based content like "Class 5 Maths"
+\u2022 Or browse our resource categories!`;
+        }
         resourceName = "";
         resourceDescription = "";
         searchType = "no_results";
@@ -867,8 +976,8 @@ var appRouter = router({
       await saveChatMessage({ sessionId, role: "assistant", message: responseMessage, language: "en" });
       await logSearchQuery({
         sessionId,
-        query: searchQuery,
-        translatedQuery: searchQuery !== message ? searchQuery : null,
+        query: optimizedSearchQuery,
+        translatedQuery: wasTranslated ? searchQuery : null,
         language,
         resultsCount: thumbnails.length,
         topResultUrl: resourceUrl,

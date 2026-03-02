@@ -40,13 +40,28 @@ const SUBJECT_MU: Record<string, number> = {
   'hindi': 1,
   'telugu': 2,
   'evs': 3, 'science': 3, 'sci': 3,
-  'maths': 4, 'math': 4, 'mathematics': 4,
+  'maths': 4, 'math': 4, 'mathematics': 4, 'mathes': 4,
   'gk': 5, 'general knowledge': 5,
   'computer': 6, 'computers': 6, 'it': 6,
   'art': 7, 'drawing': 7,
   'craft': 8, 'crafts': 8,
   'stories': 9, 'story': 9,
   'charts': 10, 'chart': 10,
+};
+
+// Subject name mappings for search queries
+const SUBJECT_NAMES: Record<string, string> = {
+  'english': 'english', 'eng': 'english',
+  'hindi': 'hindi',
+  'telugu': 'telugu',
+  'evs': 'evs', 'science': 'science', 'sci': 'science',
+  'maths': 'maths', 'math': 'maths', 'mathematics': 'maths', 'mathes': 'maths',
+  'gk': 'general knowledge', 'general knowledge': 'general knowledge',
+  'computer': 'computer', 'computers': 'computer', 'it': 'computer',
+  'art': 'art', 'drawing': 'art',
+  'craft': 'craft', 'crafts': 'craft',
+  'stories': 'stories', 'story': 'stories',
+  'charts': 'charts', 'chart': 'charts',
 };
 
 const AGE_TO_CLASS: Record<number, string> = {
@@ -97,25 +112,32 @@ function normalizeClassQuery(query: string): string {
   return normalized;
 }
 
+// Find subject name from query
+function findSubjectName(query: string): string | null {
+  const lowerQuery = query.toLowerCase();
+  for (const [subj, name] of Object.entries(SUBJECT_NAMES)) {
+    if (lowerQuery.includes(subj)) return name;
+  }
+  return null;
+}
+
 // Direct portal API call - returns only valid image results (limited to requested size)
 async function fetchPortalResultsDirect(query: string, size: number = CHATBOT_RESULTS_LIMIT): Promise<PortalResult[]> {
   try {
-    // Normalize the query for consistent results
-    const normalizedQuery = normalizeClassQuery(query);
-    console.log(\`🔍 [PORTAL] Fetching: "\${query}" -> normalized: "\${normalizedQuery}" (size: \${size})\`);
+    console.log(`🔍 [PORTAL] Fetching: "${query}" (size: ${size})`);
     
-    const url = \`\${PORTAL_API}?query=\${encodeURIComponent(normalizedQuery)}&size=\${size + 5}\`; // Fetch extra to filter
+    const url = `${PORTAL_API}?query=${encodeURIComponent(query)}&size=${size + 5}`; // Fetch extra to filter
     const response = await fetch(url);
     
     if (!response.ok) {
-      console.log(\`⚠️ [PORTAL] API error: \${response.status}\`);
+      console.log(`⚠️ [PORTAL] API error: ${response.status}`);
       return [];
     }
     
     const data = await response.json();
     
     if (!data.results || data.results.length === 0) {
-      console.log(\`⚠️ [PORTAL] No results for "\${normalizedQuery}"\`);
+      console.log(`⚠️ [PORTAL] No results for "${query}"`);
       return [];
     }
     
@@ -124,7 +146,7 @@ async function fetchPortalResultsDirect(query: string, size: number = CHATBOT_RE
       .filter((r: PortalResult) => isValidImageResult(r))
       .slice(0, size);
     
-    console.log(\`✅ [PORTAL] Found \${validResults.length} valid images for "\${normalizedQuery}"\`);
+    console.log(`✅ [PORTAL] Found ${validResults.length} valid images for "${query}"`);
     return validResults;
   } catch (error) {
     console.error('❌ [PORTAL] Error:', error);
@@ -147,17 +169,19 @@ function findSubjectMu(query: string): number | null {
   return null;
 }
 
-function parseClassSubject(query: string): { classNum: number | null; subjectMu: number | null } {
+function parseClassSubject(query: string): { classNum: number | null; subjectMu: number | null; subjectName: string | null } {
   // Normalize the query first
   const normalizedQuery = normalizeClassQuery(query);
   
   // Match "class X" pattern (after normalization)
   const classMatch = normalizedQuery.match(/class\s*(\d+)/i);
   const subjectMu = findSubjectMu(normalizedQuery);
+  const subjectName = findSubjectName(normalizedQuery);
   
   return {
     classNum: classMatch ? parseInt(classMatch[1]) : null,
-    subjectMu
+    subjectMu,
+    subjectName
   };
 }
 
@@ -170,38 +194,54 @@ function buildSmartUrl(query: string, classNum: number | null, subjectMu: number
   const lowerQuery = query.toLowerCase().trim();
 
   if (OCRC_CATEGORIES[lowerQuery]) {
-    return \`\${BASE_URL}\${OCRC_CATEGORIES[lowerQuery].path}?main=2&mu=\${OCRC_CATEGORIES[lowerQuery].mu}\`;
+    return `${BASE_URL}${OCRC_CATEGORIES[lowerQuery].path}?main=2&mu=${OCRC_CATEGORIES[lowerQuery].mu}`;
   }
 
   const age = parseAge(lowerQuery);
   if (age && AGE_TO_CLASS[age]) {
     const className = AGE_TO_CLASS[age];
     if (subjectMu !== null) {
-      return \`\${BASE_URL}/views/academic/class/\${className}?main=0&mu=\${subjectMu}\`;
+      return `${BASE_URL}/views/academic/class/${className}?main=0&mu=${subjectMu}`;
     }
-    return \`\${BASE_URL}/views/academic/class/\${className}\`;
+    return `${BASE_URL}/views/academic/class/${className}`;
   }
 
   if (classNum && classNum >= 1 && classNum <= 10) {
-    const className = \`class-\${classNum}\`;
+    const className = `class-${classNum}`;
     if (subjectMu !== null) {
-      return \`\${BASE_URL}/views/academic/class/\${className}?main=0&mu=\${subjectMu}\`;
+      return `${BASE_URL}/views/academic/class/${className}?main=0&mu=${subjectMu}`;
     }
-    return \`\${BASE_URL}/views/academic/class/\${className}\`;
+    return `${BASE_URL}/views/academic/class/${className}`;
   }
 
   const kinderMatch = lowerQuery.match(/\b(nursery|lkg|ukg)\b/i);
   if (kinderMatch) {
     const kinderClass = kinderMatch[1].toLowerCase();
     if (subjectMu !== null) {
-      return \`\${BASE_URL}/views/academic/class/\${kinderClass}?main=0&mu=\${subjectMu}\`;
+      return `${BASE_URL}/views/academic/class/${kinderClass}?main=0&mu=${subjectMu}`;
     }
-    return \`\${BASE_URL}/views/academic/class/\${kinderClass}\`;
+    return `${BASE_URL}/views/academic/class/${kinderClass}`;
   }
 
   // Use normalized query for the search URL
   const normalizedQuery = normalizeClassQuery(query);
-  return \`\${BASE_URL}/views/result?text=\${encodeURIComponent(normalizedQuery)}\`;
+  return `${BASE_URL}/views/result?text=${encodeURIComponent(normalizedQuery)}`;
+}
+
+// Build optimized search query for class + subject searches
+function buildSearchQuery(query: string, classNum: number | null, subjectName: string | null): string {
+  // If we have both class and subject, construct a specific search query
+  if (classNum && subjectName) {
+    return `class ${classNum} ${subjectName}`;
+  }
+  // Otherwise use normalized query
+  return normalizeClassQuery(query);
+}
+
+// Check if text contains non-English characters (Telugu, Hindi, etc.)
+function isNonEnglish(text: string): boolean {
+  // Check for non-ASCII characters (Telugu, Hindi, Tamil, etc.)
+  return !/^[a-zA-Z0-9\s.,!?'-]+$/.test(text);
 }
 
 export const appRouter = router({
@@ -211,7 +251,19 @@ export const appRouter = router({
       .query(async ({ input }) => {
         if (input.query.length < 2) return { resources: [], images: [] };
         try {
-          const portalResults = await fetchPortalResultsDirect(input.query, CHATBOT_RESULTS_LIMIT);
+          // Translate if non-English
+          let searchQuery = input.query;
+          if (isNonEnglish(input.query)) {
+            try {
+              const translationResult = await translateAndExtractKeyword(input.query);
+              searchQuery = translationResult.keyword || translationResult.translatedText || input.query;
+              console.log(`🌐 [AUTOCOMPLETE] Translated "${input.query}" -> "${searchQuery}"`);
+            } catch (e) {
+              console.error('Translation error in autocomplete:', e);
+            }
+          }
+          
+          const portalResults = await fetchPortalResultsDirect(searchQuery, CHATBOT_RESULTS_LIMIT);
           
           const images = portalResults.map((r: PortalResult) => ({
             id: r.code || r.title, 
@@ -220,12 +272,12 @@ export const appRouter = router({
             category: r.category,
           }));
           
-          const { classNum, subjectMu } = parseClassSubject(input.query);
-          const url = buildSmartUrl(input.query, classNum, subjectMu);
+          const { classNum, subjectMu } = parseClassSubject(searchQuery);
+          const url = buildSmartUrl(searchQuery, classNum, subjectMu);
           
           const resources = portalResults.length > 0 ? [{
-            name: \`Browse: "\${input.query}"\`, 
-            description: \`Showing top \${portalResults.length} results\`, 
+            name: `Browse: "${searchQuery}"`, 
+            description: `Showing top ${portalResults.length} results`, 
             url: url,
           }] : [];
           
@@ -245,11 +297,11 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const { message, sessionId, language = "en", history = [] } = input;
-        console.log(\`\n🎯 === SEARCH START: "\${message}" ===\`);
+        console.log(`\n🎯 === SEARCH START: "${message}" (language: ${language}) ===`);
 
         // Greeting check
         if (isGreeting(message)) {
-          console.log(\`👋 Greeting detected\`);
+          console.log(`👋 Greeting detected`);
           let aiMessage = "Hello! Welcome to MySchool. How can I help you find educational resources today?";
           try { const r = await getAIResponse(message, history); if (r.message) aiMessage = r.message; } catch (e) {}
           await saveChatMessage({ sessionId, role: "user", message, language });
@@ -265,28 +317,47 @@ export const appRouter = router({
           };
         }
 
-        // Translation if needed
+        // Translation for non-English text (Telugu, Hindi, etc.)
         let searchQuery = message;
-        if (language && language !== "en") {
-          try { 
-            const r = await translateAndExtractKeyword(message, language); 
-            searchQuery = r.translated || message; 
-          } catch (e) {}
+        let translatedKeyword = message;
+        let wasTranslated = false;
+        
+        // Check if message contains non-English characters OR language is explicitly non-English
+        if (isNonEnglish(message) || (language && language !== "en")) {
+          try {
+            console.log(`🌐 [TRANSLATION] Detected non-English text: "${message}"`);
+            const translationResult = await translateAndExtractKeyword(message);
+            
+            // Use keyword for search (more specific), translatedText for display
+            translatedKeyword = translationResult.keyword || translationResult.translatedText || message;
+            
+            // Only use translation if it's different from original
+            if (translatedKeyword.toLowerCase() !== message.toLowerCase()) {
+              searchQuery = translatedKeyword;
+              wasTranslated = true;
+              console.log(`🌐 [TRANSLATION] SUCCESS: "${message}" -> keyword: "${translatedKeyword}", full: "${translationResult.translatedText}"`);
+            } else {
+              console.log(`🌐 [TRANSLATION] No translation needed or same result`);
+            }
+          } catch (e) {
+            console.error(`🌐 [TRANSLATION] Error:`, e);
+          }
         }
 
-        // Normalize the search query for class-related searches
-        const normalizedSearchQuery = normalizeClassQuery(searchQuery);
-        console.log(\`📝 Original: "\${searchQuery}" -> Normalized: "\${normalizedSearchQuery}"\`);
-
-        // Parse class/subject from normalized query
-        const { classNum, subjectMu } = parseClassSubject(searchQuery);
+        // Parse class/subject from the (possibly translated) query
+        const { classNum, subjectMu, subjectName } = parseClassSubject(searchQuery);
+        
+        // Build optimized search query - includes subject name for class+subject searches
+        const optimizedSearchQuery = buildSearchQuery(searchQuery, classNum, subjectName);
+        console.log(`📝 Search query: "${searchQuery}" -> Optimized: "${optimizedSearchQuery}"`);
+        console.log(`📚 Parsed: classNum=${classNum}, subjectName=${subjectName}, subjectMu=${subjectMu}`);
 
         // Build URL that will show ALL results when clicked
         const resourceUrl = buildSmartUrl(searchQuery, classNum, subjectMu);
-        console.log(\`🔗 Resource URL: \${resourceUrl}\`);
+        console.log(`🔗 Resource URL: ${resourceUrl}`);
 
-        // Fetch top 5 results using normalized query
-        let portalResults = await fetchPortalResultsDirect(normalizedSearchQuery, CHATBOT_RESULTS_LIMIT);
+        // Fetch top 5 results using optimized query
+        let portalResults = await fetchPortalResultsDirect(optimizedSearchQuery, CHATBOT_RESULTS_LIMIT);
         
         // Check if we have valid image results
         const hasRealResults = portalResults.length > 0;
@@ -298,6 +369,11 @@ export const appRouter = router({
         let resourceDescription: string = "";
         let searchType: string;
         
+        // Create display text showing original and translated query if applicable
+        const displayQuery = wasTranslated 
+          ? `"${message}" (${translatedKeyword})` 
+          : `"${searchQuery}"`;
+        
         if (hasRealResults) {
           thumbnails = portalResults.map(r => ({ 
             url: r.path, 
@@ -306,14 +382,26 @@ export const appRouter = router({
             category: r.category 
           }));
           
-          // Simple message: "Showing top X results for search"
-          responseMessage = \`Showing top \${portalResults.length} results for "\${searchQuery}". Click "Open Resource" to see all matching images!\`;
-          resourceName = \`Top \${portalResults.length} results\`;
+          // Customize message based on search type
+          if (classNum && subjectName) {
+            const subjectDisplay = subjectName.charAt(0).toUpperCase() + subjectName.slice(1);
+            responseMessage = `Showing Class ${classNum} ${subjectDisplay} resources! Found ${portalResults.length} results. Click "Open Resource" to see more!`;
+          } else if (wasTranslated) {
+            responseMessage = `Found ${portalResults.length} results for ${displayQuery}. Click "Open Resource" to see all!`;
+          } else {
+            responseMessage = `Showing top ${portalResults.length} results for ${displayQuery}. Click "Open Resource" to see all matching images!`;
+          }
+          
+          resourceName = `Top ${portalResults.length} results`;
           resourceDescription = portalResults.slice(0, 3).map(r => r.title).join(", ");
           searchType = "direct_search";
         } else {
           // No valid image results found
-          responseMessage = \`No images found for "\${searchQuery}". Try searching for:\n• Common topics like "animals", "fruits", "flowers"\n• Class-based content like "Class 5 Maths"\n• Or browse our resource categories!\`;
+          if (wasTranslated) {
+            responseMessage = `No images found for ${displayQuery}. Try searching for:\n• Common topics like "animals", "fruits", "flowers"\n• Class-based content like "Class 5 Maths"\n• Or browse our resource categories!`;
+          } else {
+            responseMessage = `No images found for "${searchQuery}". Try searching for:\n• Common topics like "animals", "fruits", "flowers"\n• Class-based content like "Class 5 Maths"\n• Or browse our resource categories!`;
+          }
           resourceName = "";
           resourceDescription = "";
           searchType = "no_results";
@@ -324,15 +412,15 @@ export const appRouter = router({
         await saveChatMessage({ sessionId, role: "assistant", message: responseMessage, language: "en" });
         await logSearchQuery({ 
           sessionId, 
-          query: normalizedSearchQuery, 
-          translatedQuery: searchQuery !== message ? searchQuery : null, 
+          query: optimizedSearchQuery, 
+          translatedQuery: wasTranslated ? searchQuery : null, 
           language, 
           resultsCount: thumbnails.length, 
           topResultUrl: resourceUrl, 
           topResultName: portalResults[0]?.title || "" 
         });
 
-        console.log(\`✅ === SEARCH COMPLETE (\${hasRealResults ? \`showing \${portalResults.length}\` : 'no results'}) ===\n\`);
+        console.log(`✅ === SEARCH COMPLETE (${hasRealResults ? `showing ${portalResults.length}` : 'no results'}) ===\n`);
         
         return { 
           response: responseMessage, 

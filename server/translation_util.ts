@@ -10,31 +10,45 @@ const groq = new OpenAI({
 
 export async function translateAndExtractKeyword(text: string): Promise<{ translatedText: string; keyword: string }> {
   // If text is already primarily English, just return it
-  if (/^[a-zA-Z0-9\s.,!?-]+$/.test(text)) {
+  if (/^[a-zA-Z0-9\s.,!?'-]+$/.test(text)) {
+    console.log(`[Translation] Text is already English: "${text}"`);
     return { translatedText: text, keyword: text };
   }
 
   try {
+    console.log(`[Translation] Translating: "${text}"`);
+    
     const response = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
-          content: `You are a translation assistant for MySchool educational portal. 
+          content: `You are a translation assistant for MySchool educational portal.
+
 Your task:
-1. Detect the language (Telugu, Hindi, Gujarati, Tamil, or other Indian languages)
+1. Detect the language (Telugu, Hindi, Gujarati, Tamil, Kannada, Malayalam, or other Indian languages)
 2. Translate the input to English accurately
-3. Extract the most important keyword for educational resource search
+3. Extract the most important English keyword for educational resource search
 
-Return JSON format: {"translatedText": "...", "keyword": "..."}
+Return ONLY valid JSON format: {"translatedText": "english translation", "keyword": "search_keyword"}
 
-Examples:
-Telugu "జంతువుల చిత్రాలు" → {"translatedText": "animal images", "keyword": "animals"}
-Telugu "పండు" → {"translatedText": "fruit", "keyword": "fruit"}
-Hindi "कक्षा 5 गणित" → {"translatedText": "class 5 maths", "keyword": "maths"}
-Gujarati "વિજ્ઞાન પરીક્ષા" → {"translatedText": "science exam", "keyword": "science"}
+IMPORTANT EXAMPLES:
+- Telugu "పండ్లు" or "పండు" → {"translatedText": "fruits", "keyword": "fruits"}
+- Telugu "పూలు" or "పూల మొక్కలు" → {"translatedText": "flowers", "keyword": "flowers"}
+- Telugu "జంతువులు" → {"translatedText": "animals", "keyword": "animals"}
+- Telugu "పక్షులు" → {"translatedText": "birds", "keyword": "birds"}
+- Telugu "కూరగాయలు" → {"translatedText": "vegetables", "keyword": "vegetables"}
+- Hindi "फल" → {"translatedText": "fruits", "keyword": "fruits"}
+- Hindi "फूल" → {"translatedText": "flowers", "keyword": "flowers"}
+- Hindi "जानवर" → {"translatedText": "animals", "keyword": "animals"}
+- Hindi "कक्षा 5 गणित" → {"translatedText": "class 5 maths", "keyword": "class 5 maths"}
+- Tamil "பழங்கள்" → {"translatedText": "fruits", "keyword": "fruits"}
+- Kannada "ಹಣ್ಣುಗಳು" → {"translatedText": "fruits", "keyword": "fruits"}
 
-IMPORTANT: Translate single words directly. "పండు" means "fruit" in English.`
+RULES:
+- keyword should be a simple English word suitable for image search
+- For class/grade queries, include class number in keyword
+- Always return valid JSON, never return empty strings`
         },
         {
           role: 'user',
@@ -42,24 +56,27 @@ IMPORTANT: Translate single words directly. "పండు" means "fruit" in Engl
         }
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.3,
+      temperature: 0.1,
       max_tokens: 150
     });
 
-    const result = JSON.parse(response.choices[0].message.content || '{"translatedText": "", "keyword": ""}');
+    const content = response.choices[0].message.content || '{}';
+    console.log(`[Translation] Raw response: ${content}`);
+    
+    const result = JSON.parse(content);
     
     // Validate the result
     const translatedText = result.translatedText?.trim() || text;
     const keyword = result.keyword?.trim() || translatedText;
     
-    console.log(`[Translation] Original: "${text}" → Translated: "${translatedText}" (Keyword: "${keyword}")`);
+    console.log(`[Translation] SUCCESS: "${text}" → Translated: "${translatedText}" (Keyword: "${keyword}")`);
     
     return {
       translatedText,
       keyword
     };
   } catch (error) {
-    console.error('Translation error:', error);
+    console.error('[Translation] Error:', error);
     // Fallback: return original text
     return { translatedText: text, keyword: text };
   }

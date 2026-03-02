@@ -4,7 +4,7 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-const SYSTEM_PROMPT = \`You are the MySchool Help Desk for portal.myschoolct.com.
+const SYSTEM_PROMPT = `You are the MySchool Help Desk for portal.myschoolct.com.
 
 Your role: Help users find educational resources quickly.
 
@@ -38,7 +38,7 @@ IMPORTANT:
 - Only use class_subject when user explicitly mentions a class NUMBER (1-10)
 - searchQuery should be the exact search term, not modified
 - Never refer to yourself as AI, bot, or assistant - you are MySchool Help Desk
-\`;
+`;
 
 interface AIResponse {
   message: string;
